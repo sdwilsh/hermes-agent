@@ -398,6 +398,18 @@ if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
         :
     elif [ -n "$xdg_owner" ] && [ "$xdg_owner" != "0" ] && [ "$xdg_owner" != "$actual_hermes_uid" ]; then
         echo "[stage2] Warning: $XDG_RUNTIME_DIR is owned by uid $xdg_owner (not root or hermes) — refusing to adopt it"
+    elif [ "$(id -u)" != 0 ] && [ "$xdg_owner" = "0" ]; then
+        # A non-root start cannot chown the image's root-owned directory, so
+        # make a private one: mktemp creates it 0700 under a name nobody can
+        # predict, and with-contenv hands it to the supervised services.
+        if xdg_private=$(mktemp -d /tmp/hermes-runtime.XXXXXX) \
+                && mkdir -p /run/s6/container_environment \
+                && printf '%s' "$xdg_private" > /run/s6/container_environment/XDG_RUNTIME_DIR; then
+            XDG_RUNTIME_DIR="$xdg_private"
+            export XDG_RUNTIME_DIR
+        else
+            echo "[stage2] Warning: could not set up a private XDG_RUNTIME_DIR (continuing)"
+        fi
     else
         mkdir -p "$XDG_RUNTIME_DIR" 2>/dev/null || \
             echo "[stage2] Warning: could not create XDG_RUNTIME_DIR $XDG_RUNTIME_DIR (continuing)"
